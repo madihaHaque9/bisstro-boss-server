@@ -24,6 +24,7 @@ async function run() {
     // await client.connect();
     const menuCollection=client.db("bisstroDb").collection("menu");
     const reviewCollection=client.db("bisstroDb").collection("reviews");
+    const cartCollection=client.db("bisstroDb").collection("carts");
     app.get('/menu',async(req,res)=>{
        const result=await menuCollection.find().toArray();
        res.send(result);
@@ -39,6 +40,12 @@ async function run() {
     
     // Send a ping to confirm a successful connection
     
+    })
+    // carts collection
+    app.post('/carts',async(req,res)=>{
+      const cartItem=req.body;
+      const result =await cartCollection.insertOne(cartItem);
+      res.send(result);
     })
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
