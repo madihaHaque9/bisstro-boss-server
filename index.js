@@ -23,8 +23,14 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     // await client.connect();
     const menuCollection=client.db("bisstroDb").collection("menu");
+    const userCollection=client.db("bisstroDb").collection("users");
     const reviewCollection=client.db("bisstroDb").collection("reviews");
     const cartCollection=client.db("bisstroDb").collection("carts");
+    app.post('/users',async(req,res)=>{
+      const user=req.body;
+      const result=await userCollection.insertOne(user);
+      res.send(result);
+    })
     app.get('/menu',async(req,res)=>{
        const result=await menuCollection.find().toArray();
        res.send(result);
