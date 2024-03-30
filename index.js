@@ -27,6 +27,7 @@ async function run() {
     const userCollection=client.db("bisstroDb").collection("users");
     const reviewCollection=client.db("bisstroDb").collection("reviews");
     const cartCollection=client.db("bisstroDb").collection("carts");
+    const paymentCollection = client.db("bisstroDB").collection("payment");
     app.post('/jwt',async(req,res)=>{
       const user=req.body;
       const token=jwt.sign(user,process.env.ACCESS_TOKEN_SECRET,{expiresIn:'1h'});
@@ -130,6 +131,22 @@ async function run() {
       const result=await menuCollection.insertOne(item);
       res.send(result);
     })
+    app.patch('/menu/:id',async(req,res)=>{
+      const item=req.body;
+      const id=req.params.id;
+      const filter={_id:new ObjectId(id)}
+      const updatedDoc={
+        $set:
+       {
+        name:item.name,
+        category:item.category,
+        recipe:item.recipe,
+        image:item.image
+       }
+      }
+      const result=await menuCollection.updateOne(filter,updatedDoc);
+      res.send(result)
+    })
     app.delete('/menu/:id',verifyToken,verifyAdmin,async(req,res)=>{
       const id=req.params.id;
       const query={_id: new ObjectId(id)}
@@ -167,6 +184,100 @@ async function run() {
 
 
     })
+    app.post('/create-payment-intent',async(req,res)=>{
+      const {price}=req.body;
+      const amount= parseInt(price*100);
+      const paymentIntent= await stripe.paymentIntents.create({
+         amount:amount,
+         currency:"usd",
+         payment_method_types:['card']
+    
+      })
+      res.send({
+        clientSecret:paymentIntent.client_secret
+      })
+    })
+    app.get('/payments/:email',verifyToken,async(req,res)=>{
+      const query={email: req.params.email}
+      if(req.params.email!==req.params.email ){
+        return res.status(403).send({message:'forbidden access'})
+      }
+      const result=await paymentCollection.find(query).toArray();
+      res.send(result)
+    })
+          app.post('/payments',async(req,res)=>{
+            const payment= req.body;
+            const paymentResult= await paymentCollection.insertOne(payment)
+            console.log("payment info",payment)
+            const query= {_id: {
+              $in: payment.cardIds.map(id=> new ObjectId(id))
+            }}
+            const deleteResult= await cartCollection.deleteMany(query)
+            res.send({paymentResult,deleteResult})
+          })
+          // stats
+          app.get('/admin-stats',async(req,res)=>{
+            const users=await userCollection.estimatedDocumentCount();
+            const menuItems= await menuCollection.estimatedDocumentCount()
+            const orders= await paymentCollection.estimatedDocumentCount()
+            // const payments= await paymentCollection.find().toArray();
+            // const revenue= payments.reduce((total,payment)=>total+payment.price,0)
+            const result= await paymentCollection.aggregate([
+              {
+                $group:{
+                  _id:null,
+                  totalRevenue:{
+                    $sum: '$price'
+                  }
+                }
+    
+              }
+            ]).toArray()
+            const revenue=result.length>0 ? result[0].totalRevenue:0;
+            res.send({
+              users,
+              menuItems,
+              orders,
+              revenue
+            })
+          })
+          // order status
+          app.get('/order-stats',async(req,res)=>{
+            const result=await paymentCollection.aggregate([
+              {
+                $unwind:'$menuItemIds'
+              },{
+                $lookup: {
+                  from:'menu',
+                  localField:'menuItemIds',
+                  foreignField:'_id',
+                  as:'menuItems'
+                }
+    
+              },{
+                $unwind:'$menuItems'
+              },{
+                $group:{
+                  _id:'$menuItems.category',
+                  quantity:{
+                    $sum: 1
+                  },
+                  revenue:{
+                    $sum: "$menuItems.price"
+                  }
+                }
+              },{
+                $project:{
+                  _id:0,
+                  category:'$_id',
+                  quantity:'$quantity',
+                  revenue:'$revenue'
+                }
+              }
+    
+            ]).toArray();
+            res.send(result)
+          })
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
